@@ -557,6 +557,18 @@ opts = [
                     'cpu_arch is not in the dictionary, '
                     'the [conductor]bootloader value will be used instead.'
                 )),
+    cfg.BoolOpt('error_on_ramdisk_config_inconsistency',
+                default=False,
+                mutable=True,
+                help=_('Option to determine if Ironic should fail to boot '
+                       'ramdisk in situations where configuration is '
+                       'ambiguous.e.g. if node[driver_info] contains an '
+                       'override for deploy_ramdisk but not deploy_kernel '
+                       'when ambiguous. When set to True, Ironic will raise '
+                       'and fail the provisioning action that required a '
+                       'ramdisk and kernel. When set to False, Ironic will '
+                       'fallback to the next valid, consistent configured '
+                       'ramdisk and kernel for the node.'))
 ]
 
 
