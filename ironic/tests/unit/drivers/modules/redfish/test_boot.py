@@ -517,6 +517,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(image_utils, 'prepare_deploy_iso', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_driver_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_power_action',
                        autospec=True)
@@ -524,11 +528,14 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_prepare_ramdisk_with_params(
             self, mock_system, mock_boot_mode_utils, mock_node_power_action,
-            mock__parse_driver_info, mock__insert_vmedia, mock__eject_vmedia,
+            mock__parse_driver_info, mock_detect_protocols,
+            mock_select_protocol, mock__insert_vmedia, mock__eject_vmedia,
             mock_prepare_deploy_iso, mock_node_set_boot_device,
             mock_validate_vendor):
 
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=False) as task:
             task.node.provision_state = states.DEPLOYING
@@ -549,7 +556,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 task, managers, sushy.VIRTUAL_MEDIA_CD)
 
             mock__insert_vmedia.assert_called_once_with(
-                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD)
+                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD,
+                username=None, password=None)
 
             token = task.node.driver_internal_info['agent_secret_token']
             self.assertTrue(token)
@@ -576,6 +584,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(image_utils, 'prepare_deploy_iso', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_driver_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_power_action',
                        autospec=True)
@@ -583,10 +595,13 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_prepare_ramdisk_no_debug(
             self, mock_system, mock_boot_mode_utils, mock_node_power_action,
-            mock__parse_driver_info, mock__insert_vmedia, mock__eject_vmedia,
+            mock__parse_driver_info, mock_detect_protocols,
+            mock_select_protocol, mock__insert_vmedia, mock__eject_vmedia,
             mock_prepare_deploy_iso, mock_node_set_boot_device):
         self.config(debug=False)
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=True) as task:
             task.node.provision_state = states.DEPLOYING
@@ -603,7 +618,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 task, managers, sushy.VIRTUAL_MEDIA_CD)
 
             mock__insert_vmedia.assert_called_once_with(
-                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD)
+                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD,
+                username=None, password=None)
 
             expected_params = {
                 'ipa-agent-token': mock.ANY,
@@ -625,6 +641,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_boot, '_has_vmedia_device', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_driver_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_power_action',
                        autospec=True)
@@ -632,11 +652,14 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_prepare_ramdisk_with_floppy(
             self, mock_system, mock_boot_mode_utils, mock_node_power_action,
-            mock__parse_driver_info, mock__insert_vmedia, mock__eject_vmedia,
+            mock__parse_driver_info, mock_detect_protocols,
+            mock_select_protocol, mock__insert_vmedia, mock__eject_vmedia,
             mock__has_vmedia_device, mock_prepare_deploy_iso,
             mock_prepare_floppy_image, mock_node_set_boot_device):
         system = mock_system.return_value
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=False) as task:
             task.node.provision_state = states.DEPLOYING
@@ -673,7 +696,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 mock.call(task, managers, 'floppy-image-url',
                           sushy.VIRTUAL_MEDIA_FLOPPY),
                 mock.call(task, managers, 'cd-image-url',
-                          sushy.VIRTUAL_MEDIA_CD),
+                          sushy.VIRTUAL_MEDIA_CD,
+                          username=None, password=None),
             ]
 
             mock__insert_vmedia.assert_has_calls(insert_calls)
@@ -699,6 +723,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_boot, '_has_vmedia_device', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_driver_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_power_action',
                        autospec=True)
@@ -706,11 +734,14 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_prepare_ramdisk_with_usb(
             self, mock_system, mock_boot_mode_utils, mock_node_power_action,
-            mock__parse_driver_info, mock__insert_vmedia, mock__eject_vmedia,
+            mock__parse_driver_info, mock_detect_protocols,
+            mock_select_protocol, mock__insert_vmedia, mock__eject_vmedia,
             mock__has_vmedia_device, mock_prepare_deploy_iso,
             mock_prepare_floppy_image, mock_node_set_boot_device):
         system = mock_system.return_value
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=False) as task:
             task.node.provision_state = states.DEPLOYING
@@ -747,7 +778,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 mock.call(task, managers, 'floppy-image-url',
                           sushy.VIRTUAL_MEDIA_USBSTICK),
                 mock.call(task, managers, 'cd-image-url',
-                          sushy.VIRTUAL_MEDIA_CD),
+                          sushy.VIRTUAL_MEDIA_CD,
+                          username=None, password=None),
             ]
 
             mock__insert_vmedia.assert_has_calls(insert_calls)
@@ -771,6 +803,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(image_utils, 'prepare_deploy_iso', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_driver_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_power_action',
                        autospec=True)
@@ -778,10 +814,13 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_prepare_ramdisk_no_config(
             self, mock_system, mock_boot_mode_utils, mock_node_power_action,
-            mock__parse_driver_info, mock__insert_vmedia, mock__eject_vmedia,
+            mock__parse_driver_info, mock_detect_protocols,
+            mock_select_protocol, mock__insert_vmedia, mock__eject_vmedia,
             mock_prepare_deploy_iso, mock_node_set_boot_device):
 
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=False) as task:
             task.node.provision_state = states.DEPLOYING
@@ -799,7 +838,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 task, managers, sushy.VIRTUAL_MEDIA_CD)
 
             mock__insert_vmedia.assert_called_once_with(
-                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD)
+                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD,
+                username=None, password=None)
 
             expected_params = {
                 'ipa-debug': '1',
@@ -826,6 +866,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_boot, '_has_vmedia_device', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_driver_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_power_action',
                        autospec=True)
@@ -833,11 +877,14 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_prepare_ramdisk_fast_track(
             self, mock_system, mock_boot_mode_utils, mock_node_power_action,
-            mock__parse_driver_info, mock__insert_vmedia, mock__eject_vmedia,
+            mock__parse_driver_info, mock_detect_protocols,
+            mock_select_protocol, mock__insert_vmedia, mock__eject_vmedia,
             mock__has_vmedia_device,
             mock_prepare_deploy_iso, mock_node_set_boot_device):
         system = mock_system.return_value
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=False) as task:
             task.node.provision_state = states.DEPLOYING
@@ -863,6 +910,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_boot, '_has_vmedia_device', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_driver_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_power_action',
                        autospec=True)
@@ -870,11 +921,14 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_prepare_ramdisk_fast_track_impossible(
             self, mock_system, mock_boot_mode_utils, mock_node_power_action,
-            mock__parse_driver_info, mock__insert_vmedia, mock__eject_vmedia,
+            mock__parse_driver_info, mock_detect_protocols,
+            mock_select_protocol, mock__insert_vmedia, mock__eject_vmedia,
             mock__has_vmedia_device,
             mock_prepare_deploy_iso, mock_node_set_boot_device):
         system = mock_system.return_value
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=False) as task:
             task.node.provision_state = states.DEPLOYING
@@ -896,7 +950,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 task, managers, sushy.VIRTUAL_MEDIA_CD)
 
             mock__insert_vmedia.assert_called_once_with(
-                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD)
+                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD,
+                username=None, password=None)
 
             token = task.node.driver_internal_info['agent_secret_token']
             self.assertTrue(token)
@@ -953,6 +1008,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(image_utils, 'prepare_boot_iso', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_deploy_info', autospec=True)
     @mock.patch.object(redfish_boot, 'manager_utils', autospec=True)
     @mock.patch.object(redfish_boot, 'deploy_utils', autospec=True)
@@ -960,15 +1019,20 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_prepare_instance_normal_boot(
             self, mock_system, mock_boot_mode_utils, mock_deploy_utils,
-            mock_manager_utils, mock__parse_deploy_info, mock__insert_vmedia,
-            mock__eject_vmedia, mock_prepare_boot_iso, mock_clean_up_instance):
+            mock_manager_utils, mock__parse_deploy_info,
+            mock_detect_protocols, mock_select_protocol,
+            mock__insert_vmedia, mock__eject_vmedia,
+            mock_prepare_boot_iso, mock_clean_up_instance):
 
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=True) as task:
             task.node.provision_state = states.DEPLOYING
-            task.node.driver_internal_info[
-                'root_uuid_or_disk_id'] = self.node.uuid
+            d_i_info = task.node.driver_internal_info
+            d_i_info['root_uuid_or_disk_id'] = self.node.uuid
+            task.node.driver_internal_info = d_i_info
 
             mock_deploy_utils.get_boot_option.return_value = 'net'
 
@@ -995,7 +1059,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 task, managers, sushy.VIRTUAL_MEDIA_CD)
 
             mock__insert_vmedia.assert_called_once_with(
-                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD)
+                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD,
+                username=None, password=None)
 
             mock_manager_utils.node_set_boot_device.assert_called_once_with(
                 task, boot_devices.CDROM, persistent=True)
@@ -1010,6 +1075,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(image_utils, 'prepare_boot_iso', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_deploy_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_set_boot_device',
                        autospec=True)
@@ -1019,17 +1088,23 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     def test_prepare_instance_ramdisk_boot(
             self, mock_system, mock_boot_mode_utils, mock_deploy_utils,
             mock_node_set_boot_device, mock__parse_deploy_info,
+            mock_detect_protocols, mock_select_protocol,
             mock__insert_vmedia, mock__eject_vmedia, mock_prepare_boot_iso,
             mock_prepare_disk, mock_clean_up_instance):
 
         configdrive = 'Y29udGVudA=='
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=True) as task:
             task.node.provision_state = states.DEPLOYING
-            task.node.driver_internal_info[
-                'root_uuid_or_disk_id'] = self.node.uuid
-            task.node.instance_info['configdrive'] = configdrive
+            d_i_info = task.node.driver_internal_info
+            d_i_info['root_uuid_or_disk_id'] = self.node.uuid
+            task.node.driver_internal_info = d_i_info
+            i_info = task.node.instance_info
+            i_info['configdrive'] = configdrive
+            task.node.instance_info = i_info
 
             mock_deploy_utils.get_boot_option.return_value = 'ramdisk'
 
@@ -1057,7 +1132,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
 
             mock__insert_vmedia.assert_has_calls([
                 mock.call(task, managers,
-                          'image-url', sushy.VIRTUAL_MEDIA_CD),
+                          'image-url', sushy.VIRTUAL_MEDIA_CD,
+                          username=None, password=None),
                 mock.call(task, managers,
                           'cd-url', sushy.VIRTUAL_MEDIA_USBSTICK),
             ])
@@ -1072,6 +1148,10 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     @mock.patch.object(image_utils, 'prepare_boot_iso', autospec=True)
     @mock.patch.object(redfish_boot, '_eject_vmedia', autospec=True)
     @mock.patch.object(redfish_boot, '_insert_vmedia', autospec=True)
+    @mock.patch.object(redfish_boot, '_select_transport_protocol',
+                       autospec=True)
+    @mock.patch.object(redfish_boot, '_detect_supported_transport_protocols',
+                       autospec=True)
     @mock.patch.object(redfish_boot, '_parse_deploy_info', autospec=True)
     @mock.patch.object(redfish_boot.manager_utils, 'node_set_boot_device',
                        autospec=True)
@@ -1081,16 +1161,22 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
     def test_prepare_instance_ramdisk_boot_iso(
             self, mock_system, mock_boot_mode_utils, mock_deploy_utils,
             mock_node_set_boot_device, mock__parse_deploy_info,
+            mock_detect_protocols, mock_select_protocol,
             mock__insert_vmedia, mock__eject_vmedia, mock_prepare_boot_iso,
             mock_clean_up_instance):
 
         managers = mock_system.return_value.managers
+        mock_detect_protocols.return_value = ['HTTP']
+        mock_select_protocol.return_value = 'HTTP'
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=True) as task:
             task.node.provision_state = states.DEPLOYING
-            task.node.driver_internal_info[
-                'root_uuid_or_disk_id'] = self.node.uuid
-            task.node.instance_info['configdrive'] = None
+            d_i_info = task.node.driver_internal_info
+            d_i_info['root_uuid_or_disk_id'] = self.node.uuid
+            task.node.driver_internal_info = d_i_info
+            i_info = task.node.instance_info
+            i_info['configdrive'] = None
+            task.node.instance_info = i_info
 
             mock_deploy_utils.get_boot_option.return_value = 'ramdisk'
 
@@ -1111,7 +1197,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 task, managers, sushy.VIRTUAL_MEDIA_CD)
 
             mock__insert_vmedia.assert_called_once_with(
-                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD)
+                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD,
+                username=None, password=None)
 
             mock_node_set_boot_device.assert_called_once_with(
                 task, boot_devices.CDROM, persistent=True)
@@ -1156,7 +1243,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
                 task, managers, sushy.VIRTUAL_MEDIA_CD)
 
             mock__insert_vmedia.assert_called_once_with(
-                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD)
+                task, managers, 'image-url', sushy.VIRTUAL_MEDIA_CD,
+                username=None, password=None)
 
             mock_node_set_boot_device.assert_called_once_with(
                 task, boot_devices.CDROM, persistent=True)
@@ -1188,9 +1276,12 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=True) as task:
             task.node.provision_state = states.DEPLOYING
-            task.node.driver_internal_info[
-                'root_uuid_or_disk_id'] = self.node.uuid
-            task.node.instance_info['configdrive'] = {'meta_data': {}}
+            d_i_info = task.node.driver_internal_info
+            d_i_info['root_uuid_or_disk_id'] = self.node.uuid
+            task.node.driver_internal_info = d_i_info
+            i_info = task.node.instance_info
+            i_info['configdrive'] = {'meta_data': {}}
+            task.node.instance_info = i_info
 
             mock_build_configdrive.return_value = configdrive
 
@@ -1222,7 +1313,8 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
 
             mock__insert_vmedia.assert_has_calls([
                 mock.call(task, managers,
-                          'image-url', sushy.VIRTUAL_MEDIA_CD),
+                          'image-url', sushy.VIRTUAL_MEDIA_CD,
+                          username=None, password=None),
                 mock.call(task, managers,
                           'cd-url', sushy.VIRTUAL_MEDIA_USBSTICK),
             ])
@@ -1711,6 +1803,81 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
             sushy.VIRTUAL_MEDIA_FLOPPY,
             redfish_boot._has_vmedia_device(
                 [mock_manager], sushy.VIRTUAL_MEDIA_FLOPPY, inserted=True))
+
+
+class SelectTransportProtocolTestCase(db_base.DbTestCase):
+    """Tests for _select_transport_protocol function."""
+
+    def setUp(self):
+        super(SelectTransportProtocolTestCase, self).setUp()
+        self.config(enabled_hardware_types=['redfish'],
+                    enabled_power_interfaces=['redfish'],
+                    enabled_boot_interfaces=['redfish-virtual-media'],
+                    enabled_management_interfaces=['redfish'],
+                    enabled_inspect_interfaces=['redfish'],
+                    enabled_bios_interfaces=['redfish'])
+        self.node = obj_utils.create_test_node(
+            self.context, driver='redfish', driver_info=INFO_DICT)
+
+    def test_select_transport_protocol_default_http(self):
+        """No override configured, should return HTTP."""
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            result = redfish_boot._select_transport_protocol(
+                task, ['HTTP', 'NFS', 'CIFS'])
+            self.assertEqual('HTTP', result)
+
+    def test_select_transport_protocol_explicit_nfs(self):
+        """Override to NFS, NFS supported and configured."""
+        self.config(base_url='nfs://server/share', group='nfs')
+        self.config(share_path='/mnt/nfs', group='nfs')
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['vmedia_transport_protocol'] = 'NFS'
+            result = redfish_boot._select_transport_protocol(
+                task, ['HTTP', 'NFS'])
+            self.assertEqual('NFS', result)
+
+    def test_select_transport_protocol_explicit_cifs(self):
+        """Override to CIFS, CIFS supported and configured."""
+        self.config(base_url='cifs://server/share', group='cifs')
+        self.config(share_path='/mnt/cifs', group='cifs')
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['vmedia_transport_protocol'] = 'CIFS'
+            result = redfish_boot._select_transport_protocol(
+                task, ['HTTP', 'CIFS'])
+            self.assertEqual('CIFS', result)
+
+    def test_select_transport_protocol_unsupported_raises(self):
+        """Override to NFS but BMC doesn't support it, should raise."""
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['vmedia_transport_protocol'] = 'NFS'
+            self.assertRaises(
+                exception.InvalidParameterValue,
+                redfish_boot._select_transport_protocol,
+                task, ['HTTP'])
+
+    def test_select_transport_protocol_nfs_no_config_raises(self):
+        """Override to NFS but NFS not configured, should raise."""
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['vmedia_transport_protocol'] = 'NFS'
+            self.assertRaises(
+                exception.InvalidParameterValue,
+                redfish_boot._select_transport_protocol,
+                task, ['HTTP', 'NFS'])
+
+    def test_select_transport_protocol_cifs_no_config_raises(self):
+        """Override to CIFS but CIFS not configured, should raise."""
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['vmedia_transport_protocol'] = 'CIFS'
+            self.assertRaises(
+                exception.InvalidParameterValue,
+                redfish_boot._select_transport_protocol,
+                task, ['HTTP', 'CIFS'])
 
 
 @mock.patch('oslo_utils.eventletutils.EventletEvent.wait',
