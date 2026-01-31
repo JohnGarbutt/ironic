@@ -4154,11 +4154,13 @@ class IPMIToolShellinaboxTestCase(db_base.DbTestCase):
         mock_exec.assert_called_once_with(
             driver_info, 'sol deactivate', check_exit_code=[0, 1])
 
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
     @mock.patch.object(ipmi.IPMIConsole, '_get_ipmi_cmd', autospec=True)
     @mock.patch.object(console_utils, 'start_shellinabox_console',
                        autospec=True)
-    def test__start_console(self, mock_start, mock_ipmi_cmd):
+    def test__start_console(self, mock_start, mock_ipmi_cmd, mock_persist):
         mock_start.return_value = None
+        mock_persist.return_value = ('-f', '/tmp/console.pw')
 
         with task_manager.acquire(self.context,
                                   self.node.uuid) as task:
@@ -4166,17 +4168,21 @@ class IPMIToolShellinaboxTestCase(db_base.DbTestCase):
             self.console._start_console(
                 driver_info, console_utils.start_shellinabox_console)
 
+        mock_persist.assert_called_once_with(driver_info)
         mock_start.assert_called_once_with(self.info['uuid'],
                                            self.info['port'],
                                            mock.ANY)
-        mock_ipmi_cmd.assert_called_once_with(self.console,
-                                              driver_info, mock.ANY)
+        mock_ipmi_cmd.assert_called_once_with(
+            self.console, driver_info, pw_file='/tmp/console.pw',
+            use_pwd_env=False)
 
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
     @mock.patch.object(console_utils, 'start_shellinabox_console',
                        autospec=True)
-    def test__start_console_fail(self, mock_start):
+    def test__start_console_fail(self, mock_start, mock_persist):
         mock_start.side_effect = exception.ConsoleSubprocessFailed(
             error='error')
+        mock_persist.return_value = ('-f', '/tmp/console.pw')
 
         with task_manager.acquire(self.context,
                                   self.node.uuid) as task:
@@ -4186,10 +4192,12 @@ class IPMIToolShellinaboxTestCase(db_base.DbTestCase):
                               driver_info,
                               console_utils.start_shellinabox_console)
 
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
     @mock.patch.object(console_utils, 'start_shellinabox_console',
                        autospec=True)
-    def test__start_console_fail_nodir(self, mock_start):
+    def test__start_console_fail_nodir(self, mock_start, mock_persist):
         mock_start.side_effect = exception.ConsoleError()
+        mock_persist.return_value = ('-f', '/tmp/console.pw')
 
         with task_manager.acquire(self.context,
                                   self.node.uuid) as task:
@@ -4200,9 +4208,11 @@ class IPMIToolShellinaboxTestCase(db_base.DbTestCase):
                               console_utils.start_shellinabox_console)
         mock_start.assert_called_once_with(self.node.uuid, mock.ANY, mock.ANY)
 
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
     @mock.patch.object(console_utils, 'start_shellinabox_console',
                        autospec=True)
-    def test__start_console_empty_password(self, mock_start):
+    def test__start_console_empty_password(self, mock_start, mock_persist):
+        mock_persist.return_value = ('-f', '/tmp/console.pw')
         driver_info = self.node.driver_info
         del driver_info['ipmi_password']
         self.node.driver_info = driver_info
@@ -4217,6 +4227,31 @@ class IPMIToolShellinaboxTestCase(db_base.DbTestCase):
         mock_start.assert_called_once_with(self.info['uuid'],
                                            self.info['port'],
                                            mock.ANY)
+
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
+    @mock.patch.object(ipmi.IPMIConsole, '_get_ipmi_cmd', autospec=True)
+    @mock.patch.object(console_utils, 'start_shellinabox_console',
+                       autospec=True)
+    def test__start_console_store_cred_in_env(self, mock_start, mock_ipmi_cmd,
+                                              mock_persist):
+        """Test _start_console with store_cred_in_env=True uses env."""
+        mock_start.return_value = None
+        mock_persist.return_value = ('-E', {'IPMI_PASSWORD': 'secret'})
+
+        self.config(store_cred_in_env=True, group='ipmi')
+        with task_manager.acquire(self.context,
+                                  self.node.uuid) as task:
+            driver_info = ipmi._parse_driver_info(task.node)
+            self.console._start_console(
+                driver_info, console_utils.start_shellinabox_console)
+
+        mock_persist.assert_called_once_with(driver_info)
+        mock_ipmi_cmd.assert_called_once_with(
+            self.console, driver_info, pw_file=None,
+            use_pwd_env=True)
+        mock_start.assert_called_once_with(
+            self.info['uuid'], self.info['port'], mock.ANY,
+            env_variables={'IPMI_PASSWORD': 'secret'})
 
     @mock.patch.object(ipmi, '_release_allocated_port', autospec=True)
     @mock.patch.object(console_utils, 'stop_shellinabox_console',
@@ -4363,12 +4398,14 @@ class IPMIToolSocatDriverTestCase(IPMIToolShellinaboxTestCase):
         mock_alloc.assert_called_once_with(mock.ANY, host='2001:dead:beef::1')
 
     @mock.patch.object(utils, 'execute', autospec=True)
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
     @mock.patch.object(ipmi.IPMISocatConsole, '_get_ipmi_cmd', autospec=True)
     @mock.patch.object(console_utils, 'start_socat_console',
                        autospec=True)
-    def test__start_console(self, mock_start, mock_ipmi_cmd, mock_exec):
+    def test__start_console(self, mock_start, mock_ipmi_cmd, mock_persist,
+                            mock_exec):
         mock_start.return_value = None
-
+        mock_persist.return_value = ('-f', '/tmp/console.pw')
         mock_exec.return_value = ('output', 'error')
 
         with task_manager.acquire(self.context,
@@ -4377,19 +4414,21 @@ class IPMIToolSocatDriverTestCase(IPMIToolShellinaboxTestCase):
             self.console._start_console(
                 driver_info, console_utils.start_socat_console)
 
+        mock_persist.assert_called_once_with(driver_info)
         mock_start.assert_called_once_with(self.info['uuid'],
                                            self.info['port'],
                                            mock.ANY)
-        mock_ipmi_cmd.assert_called_once_with(self.console,
-                                              driver_info, mock.ANY)
+        mock_ipmi_cmd.assert_called_once_with(
+            self.console, driver_info, pw_file='/tmp/console.pw')
 
     @mock.patch.object(utils, 'execute', autospec=True)
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
     @mock.patch.object(console_utils, 'start_socat_console',
                        autospec=True)
-    def test__start_console_fail(self, mock_start, mock_exec):
+    def test__start_console_fail(self, mock_start, mock_persist, mock_exec):
         mock_start.side_effect = exception.ConsoleSubprocessFailed(
             error='error')
-
+        mock_persist.return_value = ('-f', '/tmp/console.pw')
         mock_exec.return_value = ('output', 'error')
 
         with task_manager.acquire(self.context,
@@ -4405,11 +4444,13 @@ class IPMIToolSocatDriverTestCase(IPMIToolShellinaboxTestCase):
                                            mock.ANY)
 
     @mock.patch.object(utils, 'execute', autospec=True)
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
     @mock.patch.object(console_utils, 'start_socat_console',
                        autospec=True)
-    def test__start_console_fail_nodir(self, mock_start, mock_exec):
+    def test__start_console_fail_nodir(self, mock_start, mock_persist,
+                                       mock_exec):
         mock_start.side_effect = exception.ConsoleError()
-
+        mock_persist.return_value = ('-f', '/tmp/console.pw')
         mock_exec.return_value = ('output', 'error')
 
         with task_manager.acquire(self.context,
@@ -4422,9 +4463,12 @@ class IPMIToolSocatDriverTestCase(IPMIToolShellinaboxTestCase):
         mock_start.assert_called_once_with(self.node.uuid, mock.ANY, mock.ANY)
 
     @mock.patch.object(utils, 'execute', autospec=True)
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
     @mock.patch.object(console_utils, 'start_socat_console',
                        autospec=True)
-    def test__start_console_empty_password(self, mock_start, mock_exec):
+    def test__start_console_empty_password(self, mock_start, mock_persist,
+                                           mock_exec):
+        mock_persist.return_value = ('-f', '/tmp/console.pw')
         driver_info = self.node.driver_info
         del driver_info['ipmi_password']
         self.node.driver_info = driver_info
@@ -4441,6 +4485,33 @@ class IPMIToolSocatDriverTestCase(IPMIToolShellinaboxTestCase):
         mock_start.assert_called_once_with(self.info['uuid'],
                                            self.info['port'],
                                            mock.ANY)
+
+    @mock.patch.object(utils, 'execute', autospec=True)
+    @mock.patch.object(ipmi, '_persist_ipmi_password', autospec=True)
+    @mock.patch.object(ipmi.IPMISocatConsole, '_get_ipmi_cmd', autospec=True)
+    @mock.patch.object(console_utils, 'start_socat_console',
+                       autospec=True)
+    def test__start_console_store_cred_in_env(self, mock_start, mock_ipmi_cmd,
+                                              mock_persist, mock_exec):
+        """Test _start_console with store_cred_in_env=True uses env."""
+        mock_start.return_value = None
+        mock_persist.return_value = ('-E', {'IPMI_PASSWORD': 'secret'})
+        mock_exec.return_value = ('output', 'error')
+
+        self.config(store_cred_in_env=True, group='ipmi')
+        with task_manager.acquire(self.context,
+                                  self.node.uuid) as task:
+            driver_info = ipmi._parse_driver_info(task.node)
+            self.console._start_console(
+                driver_info, console_utils.start_socat_console)
+
+        mock_persist.assert_called_once_with(driver_info)
+        mock_ipmi_cmd.assert_called_once_with(
+            self.console, driver_info, pw_file=None,
+            use_pwd_env=True)
+        mock_start.assert_called_once_with(
+            self.info['uuid'], self.info['port'], mock.ANY,
+            env_variables={'IPMI_PASSWORD': 'secret'})
 
     @mock.patch.object(ipmi, '_release_allocated_port', autospec=True)
     @mock.patch.object(ipmi.IPMISocatConsole, '_exec_stop_console',
