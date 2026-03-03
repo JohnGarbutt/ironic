@@ -883,6 +883,114 @@ class RedfishBiosTestCase(db_base.DbTestCase):
                 apply_time=None)
 
 
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_apply_configuration_skip_when_all_match(self, mock_get_system):
+        settings = [{'name': 'ProcTurboMode', 'value': 'Disabled'},
+                    {'name': 'NicBoot1', 'value': 'NetworkBoot'}]
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            mock_bios = mock.Mock()
+            mock_bios.attributes = {'ProcTurboMode': 'Disabled',
+                                    'NicBoot1': 'NetworkBoot'}
+            mock_bios.pending_attributes = {}
+            mock_bios.get_attribute_registry.return_value = None
+            mock_get_system.return_value.bios = mock_bios
+
+            result = task.driver.bios.apply_configuration(task, settings)
+
+            self.assertIsNone(result)
+            mock_bios.set_attributes.assert_not_called()
+
+    @mock.patch.object(redfish_boot.RedfishVirtualMediaBoot, 'prepare_ramdisk',
+                       spec_set=True, autospec=True)
+    @mock.patch.object(deploy_utils, 'build_agent_options', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    @mock.patch.object(manager_utils, 'node_power_action', autospec=True)
+    def test_apply_configuration_proceed_when_mismatch(self,
+                                                       mock_power_action,
+                                                       mock_get_system,
+                                                       mock_build_agent_options,
+                                                       mock_prepare):
+        settings = [{'name': 'ProcTurboMode', 'value': 'Disabled'},
+                    {'name': 'NicBoot1', 'value': 'NetworkBoot'}]
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            mock_bios = mock.Mock()
+            mock_bios.attributes = {'ProcTurboMode': 'Enabled',
+                                    'NicBoot1': 'NetworkBoot'}
+            mock_bios.pending_attributes = {}
+            mock_bios.supported_apply_times = []
+            mock_bios.get_attribute_registry.return_value = None
+            mock_get_system.return_value.bios = mock_bios
+            task.node.deploy_step = {
+                'step': 'apply_configuration',
+                'interface': 'bios'}
+
+            task.driver.bios.apply_configuration(task, settings)
+
+            mock_bios.set_attributes.assert_called_once()
+
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_apply_configuration_skip_when_pending_attrs_match(
+            self, mock_get_system):
+        settings = [{'name': 'ProcTurboMode', 'value': 'Disabled'}]
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            mock_bios = mock.Mock()
+            mock_bios.attributes = {'ProcTurboMode': 'Disabled'}
+            mock_bios.pending_attributes = {'ProcTurboMode': 'Disabled'}
+            mock_bios.get_attribute_registry.return_value = None
+            mock_get_system.return_value.bios = mock_bios
+
+            result = task.driver.bios.apply_configuration(task, settings)
+
+            self.assertIsNone(result)
+            mock_bios.set_attributes.assert_not_called()
+
+    @mock.patch.object(redfish_boot.RedfishVirtualMediaBoot, 'prepare_ramdisk',
+                       spec_set=True, autospec=True)
+    @mock.patch.object(deploy_utils, 'build_agent_options', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    @mock.patch.object(manager_utils, 'node_power_action', autospec=True)
+    def test_apply_configuration_proceed_when_pending_attrs_conflict(
+            self, mock_power_action, mock_get_system,
+            mock_build_agent_options, mock_prepare):
+        settings = [{'name': 'ProcTurboMode', 'value': 'Disabled'}]
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            mock_bios = mock.Mock()
+            mock_bios.attributes = {'ProcTurboMode': 'Disabled'}
+            mock_bios.pending_attributes = {'ProcTurboMode': 'Enabled'}
+            mock_bios.supported_apply_times = []
+            mock_bios.get_attribute_registry.return_value = None
+            mock_get_system.return_value.bios = mock_bios
+            task.node.deploy_step = {
+                'step': 'apply_configuration',
+                'interface': 'bios'}
+
+            task.driver.bios.apply_configuration(task, settings)
+
+            mock_bios.set_attributes.assert_called_once()
+
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_apply_configuration_skip_when_pending_attrs_sushy_error(
+            self, mock_get_system):
+        settings = [{'name': 'ProcTurboMode', 'value': 'Disabled'}]
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            mock_bios = mock.Mock()
+            mock_bios.attributes = {'ProcTurboMode': 'Disabled'}
+            type(mock_bios).pending_attributes = mock.PropertyMock(
+                side_effect=sushy.exceptions.SushyError)
+            mock_bios.get_attribute_registry.return_value = None
+            mock_get_system.return_value.bios = mock_bios
+
+            result = task.driver.bios.apply_configuration(task, settings)
+
+            self.assertIsNone(result)
+            mock_bios.set_attributes.assert_not_called()
+
+
 class RedfishBiosRegistryTestCase(db_base.DbTestCase):
 
     def setUp(self):

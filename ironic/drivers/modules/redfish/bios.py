@@ -235,6 +235,35 @@ class RedfishBIOS(base.BIOSInterface):
         reboot_requested = bios_state.get(_REBOOT_REQUESTED, False)
 
         if not reboot_requested:
+            # Check if all requested settings already match the current
+            # BIOS values.  When a client of the Ironic API re-sends
+            # the same request after a successful apply, this avoids an
+            # unnecessary reboot cycle.
+            current_attrs = bios.attributes or {}
+            try:
+                pending_attrs = bios.pending_attributes
+            except (sushy.exceptions.SushyError, AttributeError):
+                pending_attrs = {}
+            if not isinstance(pending_attrs, dict):
+                pending_attrs = {}
+            all_match = True
+            for s in settings:
+                name, value = s['name'], s['value']
+                if current_attrs.get(name) != value:
+                    all_match = False
+                    break
+                if name in pending_attrs:
+                    if pending_attrs[name] != value:
+                        # A conflicting pending change exists.
+                        all_match = False
+                        break
+            if all_match:
+                LOG.info('All requested BIOS settings for node '
+                         '%(node_uuid)s already match the current '
+                         'values, skipping apply and reboot.',
+                         {'node_uuid': task.node.uuid})
+                return
+
             # Step 1: Apply settings and issue a reboot
             LOG.debug('Apply BIOS configuration for node %(node_uuid)s: '
                       '%(settings)r', {'node_uuid': task.node.uuid,
