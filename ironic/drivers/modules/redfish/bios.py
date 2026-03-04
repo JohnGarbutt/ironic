@@ -154,7 +154,8 @@ class RedfishBIOS(base.BIOSInterface):
             objects.BIOSSettingList.delete(
                 task.context, node_id, delete_names)
 
-    @base.clean_step(priority=0)
+    @base.service_step(priority=0, requires_ramdisk=False)
+    @base.clean_step(priority=0, requires_ramdisk=False)
     @base.deploy_step(priority=0)
     @base.cache_bios_settings
     def factory_reset(self, task):
