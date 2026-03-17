@@ -453,9 +453,9 @@ class RedfishManagement(base.ManagementInterface):
         try:
 
             if requires_full_boot_request:
-                current_enabled = system.boot.get('enable') \
+                current_enabled = system.boot.get('enabled') \
                     or sushy.BOOT_SOURCE_ENABLED_ONCE
-                current_target = system.boot.get('enable') \
+                current_target = system.boot.get('target') \
                     or sushy.BOOT_SOURCE_TARGET_PXE
 
                 LOG.debug('Vendor "%(vendor)s" requires full boot settings. '
