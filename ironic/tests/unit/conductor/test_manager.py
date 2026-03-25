@@ -6862,19 +6862,6 @@ class ManagerTestProperties(mgr_utils.ServiceSetUpMixin, db_base.DbTestCase):
                     'ipmi_cipher_suite']
         self._check_driver_properties("ipmi", expected)
 
-    def test_driver_properties_snmp(self):
-        self.config(enabled_hardware_types='snmp',
-                    enabled_power_interfaces=['snmp'])
-        expected = ['snmp_driver', 'snmp_address', 'snmp_port', 'snmp_version',
-                    'snmp_community',
-                    'snmp_community_read', 'snmp_community_write',
-                    'snmp_security', 'snmp_outlet',
-                    'snmp_user',
-                    'snmp_context_engine_id', 'snmp_context_name',
-                    'snmp_auth_key', 'snmp_auth_protocol',
-                    'snmp_priv_key', 'snmp_priv_protocol']
-        self._check_driver_properties("snmp", expected)
-
     def test_driver_properties_ilo(self):
         self.config(enabled_hardware_types='ilo',
                     enabled_power_interfaces=['ilo'],
