@@ -1481,13 +1481,23 @@ class Connection(api.Connection):
             # orphaned power state requests after deletion.
             self.clear_node_target_power_state(hostname)
 
+            conductor_id_subquery = (
+                session.query(models.Conductor.id).where(
+                    models.Conductor.hostname == hostname
+                ).scalar_subquery()
+            )
+
+            # Clear conductor_affinity FK references.
+            session.execute(
+                sa.update(models.Node).where(
+                    models.Node.conductor_affinity == conductor_id_subquery
+                ).values(conductor_affinity=None)
+            )
+
             # Delete conductor hardware interfaces
             query = sa.delete(models.ConductorHardwareInterfaces).where(
-                models.ConductorHardwareInterfaces.conductor_id == (
-                    session.query(models.Conductor.id).where(
-                        models.Conductor.hostname == hostname
-                    ).scalar_subquery()
-                )
+                models.ConductorHardwareInterfaces.conductor_id
+                == conductor_id_subquery
             )
             session.execute(query)
 
