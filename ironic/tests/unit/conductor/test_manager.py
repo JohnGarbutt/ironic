@@ -6889,21 +6889,6 @@ class ManagerTestProperties(mgr_utils.ServiceSetUpMixin, db_base.DbTestCase):
                     'ipmi_cipher_suite']
         self._check_driver_properties("ipmi", expected)
 
-    def test_driver_properties_ilo(self):
-        self.config(enabled_hardware_types='ilo',
-                    enabled_power_interfaces=['ilo'],
-                    enabled_management_interfaces=['ilo'],
-                    enabled_boot_interfaces=['ilo-virtual-media'],
-                    enabled_inspect_interfaces=['ilo'],
-                    enabled_console_interfaces=[])
-        expected = ['ilo_address', 'ilo_username',
-                    'ilo_password', 'client_port', 'client_timeout',
-                    'deploy_iso', 'ilo_change_password',
-                    'ca_file', 'snmp_auth_user', 'snmp_auth_prot_password',
-                    'snmp_auth_priv_password', 'snmp_auth_protocol',
-                    'snmp_auth_priv_protocol', 'ilo_verify_ca']
-        self._check_driver_properties("ilo", expected, pxe_common=False)
-
     def test_driver_properties_manual_management(self):
         self.config(enabled_hardware_types=['manual-management'])
         self._check_driver_properties('manual-management', [])

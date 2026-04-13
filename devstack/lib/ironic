@@ -944,11 +944,6 @@ function is_deployed_by_ipmi {
     return 1
 }
 
-function is_deployed_by_ilo {
-    [[ "${IRONIC_DEPLOY_DRIVER}" == ilo ]] && return 0
-    return 1
-}
-
 function is_deployed_by_drac {
     [[ "${IRONIC_DEPLOY_DRIVER}" == idrac ]] && return 0
     return 1
@@ -3288,13 +3283,6 @@ function enroll_nodes {
                 node_options+=" --driver-info ipmi_address=$bmc_address \
                     --driver-info ipmi_password=$bmc_passwd \
                     --driver-info ipmi_username=$bmc_username"
-            elif is_deployed_by_ilo; then
-                node_options+=" --driver-info ilo_address=$bmc_address \
-                    --driver-info ilo_password=$bmc_passwd \
-                    --driver-info ilo_username=$bmc_username"
-                if [[ $IRONIC_ENABLED_BOOT_INTERFACES == *"ilo-virtual-media"* ]]; then
-                    node_options+=" --driver-info deploy_iso=$IRONIC_DEPLOY_ISO_ID"
-                fi
             elif is_deployed_by_drac; then
                 node_options+=" --driver-info drac_address=$bmc_address \
                     --driver-info drac_password=$bmc_passwd \
