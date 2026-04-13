@@ -3645,11 +3645,13 @@ function configure_iptables {
     fi
 
     # (rpittau) workaround to allow TFTP traffic on ubuntu bionic with conntrack helper disabled
-    local pub_router_id
-    pub_router_id=$(openstack --os-cloud $OS_CLOUD router show $Q_ROUTER_NAME -f value -c id)
-    if [[ ! -z "$pub_router_id" ]]; then
-        sudo ip netns exec qrouter-$pub_router_id iptables -A PREROUTING -t raw -p udp --dport 69 -j CT --helper tftp
-        sudo ip netns exec qrouter-$pub_router_id ip6tables -A PREROUTING -t raw -p udp --dport 69 -j CT --helper tftp || true
+    if [[ "$Q_AGENT" != "ovn" ]]; then
+        local pub_router_id
+        pub_router_id=$(openstack --os-cloud $OS_CLOUD router show $Q_ROUTER_NAME -f value -c id)
+        if [[ ! -z "$pub_router_id" ]]; then
+            sudo ip netns exec qrouter-$pub_router_id iptables -A PREROUTING -t raw -p udp --dport 69 -j CT --helper tftp
+            sudo ip netns exec qrouter-$pub_router_id ip6tables -A PREROUTING -t raw -p udp --dport 69 -j CT --helper tftp || true
+        fi
     fi
 }
 
