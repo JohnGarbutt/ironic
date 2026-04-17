@@ -1463,52 +1463,6 @@ class RedfishVirtualMediaBootTestCase(db_base.DbTestCase):
 
     @mock.patch.object(redfish_boot, '_has_vmedia_via_systems', autospec=True)
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
-    def test__insert_vmedia_anew_nfs_with_action_info(
-            self, mock_sys, mock_vmd_sys):
-        with task_manager.acquire(self.context, self.node.uuid,
-                                  shared=True) as task:
-            mock_vmd_sys.return_value = False
-            mock_vmedia_cd = mock.MagicMock(
-                inserted=False,
-                media_types=[sushy.VIRTUAL_MEDIA_CD],
-                name='CD1')
-            mock_vmedia_cd.raw = {
-                'Actions': {
-                    '#VirtualMedia.InsertMedia': {
-                        '@Redfish.ActionInfo': '/action-info',
-                        'target': '/insert-media',
-                    }
-                }
-            }
-            action_info_response = mock.Mock()
-            action_info_response.content = b'{}'
-            action_info_response.json.return_value = {
-                'Parameters': [{
-                    'Name': 'TransferProtocolType',
-                    'Required': True,
-                    'AllowableValues': ['NFS', 'HTTPS'],
-                }]
-            }
-            mock_vmedia_cd._conn.get.return_value = action_info_response
-            mock_manager = mock.MagicMock()
-
-            mock_manager.virtual_media.get_members.return_value = [
-                mock_vmedia_cd]
-
-            redfish_boot._insert_vmedia(
-                task, [mock_manager], 'nfs://server/share/boot.iso',
-                sushy.VIRTUAL_MEDIA_CD)
-
-            mock_vmedia_cd._conn.get.assert_called_once_with('/action-info')
-            mock_vmedia_cd._conn.post.assert_called_once_with(
-                '/insert-media',
-                data={'Image': 'nfs://server/share/boot.iso',
-                      'TransferProtocolType': 'NFS'})
-            mock_vmedia_cd.invalidate.assert_called_once_with()
-            mock_vmedia_cd.insert_media.assert_not_called()
-
-    @mock.patch.object(redfish_boot, '_has_vmedia_via_systems', autospec=True)
-    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test__insert_vmedia_anew_dvd(self, mock_sys, mock_vmd_sys):
         mock_vmd_sys.return_value = False
         with task_manager.acquire(self.context, self.node.uuid,

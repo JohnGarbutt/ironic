@@ -16,7 +16,6 @@
 from oslo_log import log
 import sushy
 import tenacity
-from urllib import parse as urlparse
 
 from ironic.common import boot_devices
 from ironic.common import exception
@@ -37,7 +36,6 @@ LOG = log.getLogger(__name__)
 
 # Transport protocol constants (matching Redfish specification values)
 TRANSPORT_HTTP = 'HTTP'
-TRANSPORT_HTTPS = 'HTTPS'
 TRANSPORT_NFS = 'NFS'
 TRANSPORT_CIFS = 'CIFS'
 
@@ -302,80 +300,6 @@ def _insert_vmedia(task, managers, boot_url, boot_device,
     raise exception.InvalidParameterValue(exc_msg)
 
 
-def _get_transfer_protocol(boot_url):
-    scheme = urlparse.urlparse(boot_url).scheme.lower()
-    protocol_map = {
-        'http': TRANSPORT_HTTP,
-        'https': TRANSPORT_HTTPS,
-        'nfs': TRANSPORT_NFS,
-        'cifs': TRANSPORT_CIFS,
-        'smb': TRANSPORT_CIFS,
-    }
-    return protocol_map.get(scheme)
-
-
-def _insert_vmedia_with_action_info(v_media, boot_url, username=None,
-                                    password=None):
-    """Insert media using ActionInfo metadata when protocol is required.
-
-    Some BMCs require TransferProtocolType in the InsertMedia action payload,
-    but only advertise that requirement through the linked ActionInfo
-    document. When present, consult that document and send the selected
-    transfer protocol directly in the POST body.
-
-    :returns: True if a direct protocol-aware POST was issued, otherwise
-        False so the caller can fall back to the regular Sushy helper.
-    """
-    protocol = _get_transfer_protocol(boot_url)
-    if not protocol:
-        return False
-
-    raw = getattr(v_media, 'raw', None)
-    if not isinstance(raw, dict):
-        return False
-
-    actions = raw.get('Actions', {})
-    insert_media = actions.get('#VirtualMedia.InsertMedia', {})
-    action_info_uri = insert_media.get('@Redfish.ActionInfo')
-    target_uri = insert_media.get('target')
-    if not action_info_uri or not target_uri:
-        return False
-
-    response = v_media._conn.get(action_info_uri)
-    action_info = response.json() if response.content else {}
-    for parameter in action_info.get('Parameters', []):
-        if parameter.get('Name') != 'TransferProtocolType':
-            continue
-
-        allowable_values = [value.upper()
-                            for value in parameter.get('AllowableValues', [])]
-        if not parameter.get('Required') and protocol not in allowable_values:
-            return False
-        if allowable_values and protocol not in allowable_values:
-            LOG.debug("Transfer protocol %(protocol)s is not listed in "
-                      "ActionInfo allowable values %(values)s for virtual "
-                      "media %(device)s",
-                      {'protocol': protocol, 'values': allowable_values,
-                       'device': getattr(v_media, 'name', 'unknown')})
-            return False
-
-        payload = {'Image': boot_url, 'TransferProtocolType': protocol}
-        if username is not None:
-            payload['UserName'] = username
-        if password is not None:
-            payload['Password'] = password
-
-        LOG.debug("Inserting virtual media %(device)s with explicit "
-                  "TransferProtocolType %(protocol)s",
-                  {'device': getattr(v_media, 'name', 'unknown'),
-                   'protocol': protocol})
-        v_media._conn.post(target_uri, data=payload)
-        v_media.invalidate()
-        return True
-
-    return False
-
-
 @tenacity.retry(retry=tenacity.retry_if_exception(_test_retry),
                 stop=tenacity.stop_after_attempt(3),
                 wait=tenacity.wait_fixed(3),
@@ -427,15 +351,12 @@ def _insert_vmedia_in_resource(task, resource, boot_url, boot_device,
             continue
 
         try:
-            inserted = _insert_vmedia_with_action_info(
-                v_media, boot_url, username=username, password=password)
-            if not inserted:
-                kwargs = dict(inserted=True, write_protected=True)
-                if username:
-                    kwargs['username'] = username
-                if password:
-                    kwargs['password'] = password
-                v_media.insert_media(boot_url, **kwargs)
+            kwargs = dict(inserted=True, write_protected=True)
+            if username:
+                kwargs['username'] = username
+            if password:
+                kwargs['password'] = password
+            v_media.insert_media(boot_url, **kwargs)
         # NOTE(janders): On Cisco UCSB and UCSX blades there are several
         # vMedia devices. Some of those are only meant for internal use
         # by CIMC vKVM - attempts to InsertMedia into those will result
