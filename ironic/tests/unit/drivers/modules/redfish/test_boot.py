@@ -1849,11 +1849,24 @@ class SelectTransportProtocolTestCase(db_base.DbTestCase):
                 task, ['HTTP', 'CIFS'])
             self.assertEqual('CIFS', result)
 
-    def test_select_transport_protocol_unsupported_raises(self):
-        """Override to NFS but BMC doesn't support it, should raise."""
+    @mock.patch.object(redfish_boot.LOG, 'warning', autospec=True)
+    def test_select_transport_protocol_explicit_nfs_not_advertised(
+            self, mock_warning):
+        """Explicit NFS override should proceed even if not advertised."""
+        self.config(base_url='nfs://server/share', group='nfs')
+        self.config(share_path='/mnt/nfs', group='nfs')
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=True) as task:
             task.node.driver_info['vmedia_transport_protocol'] = 'NFS'
+            result = redfish_boot._select_transport_protocol(task, ['HTTP'])
+            self.assertEqual('NFS', result)
+            mock_warning.assert_called_once()
+
+    def test_select_transport_protocol_unsupported_cifs_raises(self):
+        """Explicit non-NFS override must still be BMC-supported."""
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['vmedia_transport_protocol'] = 'CIFS'
             self.assertRaises(
                 exception.InvalidParameterValue,
                 redfish_boot._select_transport_protocol,

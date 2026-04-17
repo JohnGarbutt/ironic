@@ -696,11 +696,19 @@ def _select_transport_protocol(task, supported_protocols):
     if override:
         override_upper = override.upper()
         if override_upper not in supported_upper:
-            raise exception.InvalidParameterValue(
-                _("Node %(node)s requested transport protocol %(proto)s "
-                  "via driver_info, but BMC only supports %(supported)s.")
-                % {'node': node.uuid, 'proto': override_upper,
-                   'supported': supported_upper})
+            if override_upper == TRANSPORT_NFS:
+                LOG.warning(
+                    "Node %(node)s requested NFS transport protocol via "
+                    "driver_info, but BMC reported supported protocols "
+                    "%(supported)s. Proceeding anyway because the transport "
+                    "protocol was explicitly configured.",
+                    {'node': node.uuid, 'supported': supported_upper})
+            else:
+                raise exception.InvalidParameterValue(
+                    _("Node %(node)s requested transport protocol %(proto)s "
+                      "via driver_info, but BMC only supports %(supported)s.")
+                    % {'node': node.uuid, 'proto': override_upper,
+                       'supported': supported_upper})
 
         # Validate that required configuration exists for the protocol
         if override_upper == TRANSPORT_NFS:
