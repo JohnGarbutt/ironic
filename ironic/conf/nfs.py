@@ -34,6 +34,13 @@ opts = [
                help=_('Local mount point of the NFS share where images will '
                       'be placed. Required for NFS virtual media support. '
                       'Must be used together with base_url.')),
+    cfg.StrOpt('export_path',
+               help=_('Optional exported path to append to base_url when '
+                      'building BMC-facing NFS URLs. Use this when the '
+                      'exported path visible to the BMC differs from the '
+                      'local share_path used by the conductor. If unset, '
+                      'the legacy behavior of appending share_path to '
+                      'base_url is preserved.')),
 ]
 
 

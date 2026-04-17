@@ -196,6 +196,7 @@ class NFSPublisher(AbstractPublisher):
     def __init__(self):
         self.base_url = CONF.nfs.base_url
         self.share_path = CONF.nfs.share_path
+        self.export_path = CONF.nfs.export_path
 
     def publish(self, source_path, file_name=None):
         if not file_name:
@@ -214,8 +215,13 @@ class NFSPublisher(AbstractPublisher):
         shutil.copy2(source_path, dest_path)
 
         base = self.base_url.rstrip('/')
-        share = self.share_path.lstrip('/')
-        url = f"{base}/{share}/{file_name}"
+        if self.export_path:
+            export = self.export_path.strip('/')
+            relative_dest = os.path.relpath(dest_path, self.share_path)
+            url = f"{base}/{export}/{relative_dest}"
+        else:
+            share = self.share_path.lstrip('/')
+            url = f"{base}/{share}/{file_name}"
 
         LOG.debug("Published image %(name)s to NFS share at %(dest)s, "
                   "URL: %(url)s",
