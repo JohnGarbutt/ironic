@@ -202,6 +202,19 @@ class NFSPublisherTestCase(db_base.DbTestCase):
         mock_copy2.assert_called_once_with(
             '/tmp/file.iso', '/mnt/nfs/ironic/boot.iso')
 
+    @mock.patch.object(shutil, 'copy2', autospec=True)
+    @mock.patch.object(os, 'makedirs', autospec=True)
+    def test_publish_with_export_path(self, mock_makedirs, mock_copy2):
+        self.config(base_url='nfs://server', group='nfs')
+        self.config(export_path='/export/nfsboot', group='nfs')
+        publisher = image_publisher.NFSPublisher()
+        url = publisher.publish('/tmp/file.iso', 'boot.iso')
+        self.assertEqual('nfs://server/export/nfsboot/boot.iso', url)
+        mock_makedirs.assert_called_once_with(
+            '/mnt/nfs/ironic', exist_ok=True)
+        mock_copy2.assert_called_once_with(
+            '/tmp/file.iso', '/mnt/nfs/ironic/boot.iso')
+
     def test_publish_missing_base_url(self):
         self.config(base_url=None, group='nfs')
         publisher = image_publisher.NFSPublisher()
