@@ -24,6 +24,7 @@ from urllib import parse as urlparse
 
 from oslo_log import log
 from oslo_utils import uuidutils
+from oslo_utils import strutils
 
 from ironic.common import exception
 from ironic.common.glance_service import service_utils
@@ -172,17 +173,25 @@ def _get_name(node, prefix='', suffix=''):
     return name + suffix
 
 
+def _get_boot_iso_name(node):
+    no_hyphens = strutils.bool_from_string(
+        node.driver_info.get('boot_iso_name_no_hyphens', False))
+    if no_hyphens:
+        compact_uuid = node.uuid.replace('-', '')
+        return f'boot{compact_uuid}.iso'
+    return _get_name(node, prefix='boot', suffix='.iso')
+
+
 def cleanup_iso_image(task):
     """Deletes the ISO if it was created for the instance.
 
     :param task: A task from TaskManager.
     """
-    ImageHandler.unpublish_image_for_node(task.node, prefix='boot',
-                                          suffix='.iso')
+    name = _get_boot_iso_name(task.node)
+    ImageHandler(task.node.driver).unpublish_image(name)
     # Also clean up from NFS/CIFS shares if applicable
     protocol = task.node.driver_internal_info.get('vmedia_transport_protocol')
     if protocol:
-        name = _get_name(task.node, prefix='boot', suffix='.iso')
         proto_upper = protocol.upper()
         if proto_upper == 'NFS':
             image_publisher.NFSPublisher().unpublish(name)
@@ -454,7 +463,7 @@ def _prepare_iso_image(task, kernel_href, ramdisk_href,
         download_source = CONF.deploy.ramdisk_image_download_source
 
     boot_mode = boot_mode_utils.get_boot_mode(task.node)
-    iso_object_name = _get_name(task.node, prefix='boot', suffix='.iso')
+    iso_object_name = _get_boot_iso_name(task.node)
 
     if base_iso:
         # NOTE(dtantsur): this should be "params or inject_files", but

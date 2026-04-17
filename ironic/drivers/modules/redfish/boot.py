@@ -65,6 +65,9 @@ OPTIONAL_PROPERTIES = {
                            "If set it will have priority over the following "
                            "configs: CONF.deploy.external_http_url and "
                            "CONF.deploy.http_url. Defaults to None."),
+    'boot_iso_name_no_hyphens': _("Boolean value to remove hyphens from "
+                                  "generated virtual media boot ISO file "
+                                  "names. Defaults to False."),
     'vmedia_transport_protocol': _("Override transport protocol "
                                    "selection. Valid values: 'HTTP', "
                                    "'NFS' (NFSv3), 'CIFS'. If not set, "

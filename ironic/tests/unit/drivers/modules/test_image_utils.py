@@ -427,6 +427,18 @@ class RedfishImageUtilsTestCase(db_base.DbTestCase):
 
             mock_unpublish.assert_called_once_with(mock.ANY, object_name)
 
+    @mock.patch.object(image_utils.ImageHandler, 'unpublish_image',
+                       autospec=True)
+    def test_cleanup_iso_image_no_hyphens(self, mock_unpublish):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['boot_iso_name_no_hyphens'] = True
+            image_utils.cleanup_iso_image(task)
+
+            object_name = 'boot%s.iso' % task.node.uuid.replace('-', '')
+
+            mock_unpublish.assert_called_once_with(mock.ANY, object_name)
+
     @mock.patch.object(uuidutils, 'generate_uuid', autospec=True)
     @mock.patch.object(image_utils.ImageHandler, 'publish_image',
                        autospec=True)
@@ -551,6 +563,27 @@ class RedfishImageUtilsTestCase(db_base.DbTestCase):
                 inject_files=None, publisher_id='1-23-4')
 
             self.assertEqual(expected_url, url)
+
+    @mock.patch.object(uuidutils, 'generate_uuid', autospec=True)
+    @mock.patch.object(image_utils.ImageHandler, 'publish_image',
+                       autospec=True)
+    @mock.patch.object(images, 'create_boot_iso', autospec=True)
+    def test__prepare_iso_image_no_hyphens(
+            self, mock_create_boot_iso, mock_publish_image,
+            mock_generate_uuid):
+        self.config(default_boot_mode='bios', group='deploy')
+        mock_generate_uuid.return_value = '1-23-4'
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['boot_iso_name_no_hyphens'] = True
+            image_utils._prepare_iso_image(
+                task, 'http://kernel/img', 'http://ramdisk/img',
+                bootloader_href=None, root_uuid=task.node.uuid, base_iso=None)
+
+            object_name = 'boot%s.iso' % task.node.uuid.replace('-', '')
+
+            mock_publish_image.assert_called_once_with(
+                mock.ANY, mock.ANY, object_name, None)
 
     @mock.patch.object(uuidutils, 'generate_uuid', autospec=True)
     @mock.patch.object(image_utils.ImageHandler, 'publish_image',
@@ -803,6 +836,24 @@ class RedfishImageUtilsTestCase(db_base.DbTestCase):
             self.assertEqual(mock_prepare_remote.return_value, url)
             mock_prepare_remote.assert_called_once_with(
                 task, base_image_url, file_name=f'boot-{self.node.uuid}.iso',
+                download_source='http')
+            mock_create_boot_iso.assert_not_called()
+
+    @mock.patch.object(images, 'create_boot_iso', autospec=True)
+    @mock.patch.object(image_utils, 'prepare_remote_image', autospec=True)
+    def test__prepare_iso_image_bootable_iso_no_hyphens(
+            self, mock_prepare_remote, mock_create_boot_iso):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            task.node.driver_info['boot_iso_name_no_hyphens'] = True
+            base_image_url = 'http://bearmetal.net/boot.iso'
+            self.config(ramdisk_image_download_source='http', group='deploy')
+            image_utils._prepare_iso_image(
+                task, None, None, bootloader_href=None, root_uuid=None,
+                base_iso=base_image_url)
+            mock_prepare_remote.assert_called_once_with(
+                task, base_image_url,
+                file_name=f'boot{self.node.uuid.replace("-", "")}.iso',
                 download_source='http')
             mock_create_boot_iso.assert_not_called()
 
