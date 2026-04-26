@@ -54,7 +54,10 @@ opts = [
     cfg.BoolOpt('power_off', default=True,
                 help=_('whether to power off a node after inspection '
                        'finishes. Ignored for nodes that have fast '
-                       'track mode enabled.')),
+                       'track mode enabled. Note that the node may be powered '
+                       'off at the end of inspection for other reasons, e.g. '
+                       'for safe ejection of virtual media without corrupting '
+                       'the filesystem.')),
     cfg.StrOpt('callback_endpoint_override',
                help=_('endpoint to use as a callback for posting back '
                       'introspection data when boot is managed by ironic. '
