@@ -38,11 +38,9 @@ class BaseTestCase(db_base.DbTestCase):
         self.task.shared = False
         self.task.node = self.node
         self.task.driver = mock.Mock(
-            spec=['boot', 'network', 'inspect', 'power', 'management',
-                  'storage'],
+            spec=['boot', 'network', 'inspect', 'power', 'management'],
             inspect=self.iface)
         self.driver = self.task.driver
-        self.driver.storage.should_write_image.return_value = True
 
 
 class CommonFunctionsTestCase(BaseTestCase):
@@ -377,9 +375,8 @@ class TearDownManagedInspectionTestCase(BaseTestCase):
         self.driver.network.remove_inspection_network.assert_called_once_with(
             self.task)
         self.driver.boot.clean_up_ramdisk.assert_called_once_with(self.task)
-        self.driver.power.set_power_state.assert_has_calls([
-            mock.call(self.task, states.SOFT_POWER_OFF, timeout=None),
-            mock.call(self.task, states.POWER_OFF, timeout=None)])
+        self.driver.power.set_power_state.assert_called_once_with(
+            self.task, states.SOFT_POWER_OFF, timeout=None)
 
     def test_managed_no_power_off(self):
         CONF.set_override('power_off', False, group='inspector')
@@ -392,8 +389,7 @@ class TearDownManagedInspectionTestCase(BaseTestCase):
         self.driver.network.remove_inspection_network.assert_called_once_with(
             self.task)
         self.driver.boot.clean_up_ramdisk.assert_called_once_with(self.task)
-        self.driver.power.set_power_state.assert_called_once_with(
-            self.task, states.SOFT_POWER_OFF, timeout=None)
+        self.assertFalse(self.driver.power.set_power_state.called)
 
     def test_managed_no_power_off_on_fast_track(self):
         CONF.set_override('fast_track', True, group='deploy')
@@ -406,8 +402,7 @@ class TearDownManagedInspectionTestCase(BaseTestCase):
         self.driver.network.remove_inspection_network.assert_called_once_with(
             self.task)
         self.driver.boot.clean_up_ramdisk.assert_called_once_with(self.task)
-        self.driver.power.set_power_state.assert_called_once_with(
-            self.task, states.SOFT_POWER_OFF, timeout=None)
+        self.assertFalse(self.driver.power.set_power_state.called)
 
     def test_managed_disable_power_off(self):
         utils.set_node_nested_field(self.node, 'driver_internal_info',
@@ -419,7 +414,7 @@ class TearDownManagedInspectionTestCase(BaseTestCase):
 
         self.driver.network.remove_inspection_network.assert_called_once_with(
             self.task)
-        self.assertFalse(self.driver.boot.clean_up_ramdisk.called)
+        self.driver.boot.clean_up_ramdisk.assert_called_once_with(self.task)
         self.driver.power.reboot.assert_called_once_with(
             self.task, timeout=None)
 
