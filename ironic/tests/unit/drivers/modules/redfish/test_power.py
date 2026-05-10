@@ -160,6 +160,38 @@ class RedfishPowerTestCase(db_base.DbTestCase):
                 # Reset mocks
                 mock_get_system.reset_mock()
 
+    @mock.patch.object(redfish_power.cond_utils, 'node_wait_for_power_state',
+                       autospec=True)
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_set_power_state_ami_force_off_retry_clears_stuck_task(
+            self, mock_get_system, mock_wait):
+        fake_system = mock_get_system.return_value
+
+        fake_task = mock.Mock()
+        fake_task.task_state = sushy.TaskState.RUNNING
+        fake_task.name = 'Computer Reset'
+        fake_task.description = 'Task for Computer Reset'
+        fake_task.task_monitor = '/redfish/v1/TaskService/TaskMonitors/6'
+
+        task_collection = fake_system.root.get_task_service.return_value.tasks
+        task_collection.get_members.return_value = [fake_task]
+        mock_wait.side_effect = [
+            exception.PowerStateFailure(pstate=states.POWER_OFF),
+            states.POWER_OFF,
+        ]
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.node.properties['vendor'] = 'ami'
+            task.driver.power.set_power_state(task, states.POWER_OFF)
+
+            expected_reset = mock.call(sushy.RESET_FORCE_OFF)
+            fake_system.reset_system.assert_has_calls([expected_reset,
+                                                       expected_reset])
+            fake_task._conn.delete.assert_called_once_with(
+                fake_task.task_monitor)
+            self.assertEqual(2, mock_wait.call_count)
+
     @mock.patch.object(sushy, 'Sushy', autospec=True)
     @mock.patch.object(redfish_utils, 'get_system', autospec=True)
     def test_set_power_state_fail(self, mock_get_system, mock_sushy):

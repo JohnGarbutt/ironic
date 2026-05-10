@@ -50,6 +50,57 @@ TARGET_STATE_MAP = {
     states.SOFT_POWER_OFF: states.POWER_OFF,
 }
 
+AMI_FORCE_OFF_TASK_STATES = {
+    sushy.TaskState.NEW,
+    sushy.TaskState.PENDING,
+    sushy.TaskState.RUNNING,
+    sushy.TaskState.STARTING,
+}
+
+
+def _is_ami_force_off_task(redfish_task):
+    task_text = '%s %s' % (redfish_task.name or '',
+                           redfish_task.description or '')
+    return (redfish_task.task_state in AMI_FORCE_OFF_TASK_STATES
+            and redfish_task.task_monitor
+            and 'computer reset' in task_text.lower())
+
+
+def _clear_ami_stuck_force_off_tasks(task, system):
+    if task.node.properties.get('vendor', '').lower() != 'ami':
+        return False
+
+    try:
+        task_service = system.root.get_task_service()
+        redfish_tasks = task_service.tasks.get_members()
+    except sushy.exceptions.SushyError as e:
+        LOG.warning('Failed to inspect AMI Redfish tasks for node %(node)s '
+                    'after power off timed out: %(error)s',
+                    {'node': task.node.uuid, 'error': e})
+        return False
+
+    cleared = False
+    for redfish_task in redfish_tasks:
+        if not _is_ami_force_off_task(redfish_task):
+            continue
+
+        task_monitor = redfish_task.task_monitor
+        try:
+            redfish_task._conn.delete(task_monitor)
+        except sushy.exceptions.SushyError as e:
+            LOG.warning('Failed to delete stuck AMI Redfish task monitor '
+                        '%(task_monitor)s for node %(node)s: %(error)s',
+                        {'task_monitor': task_monitor, 'node': task.node.uuid,
+                         'error': e})
+            continue
+
+        LOG.warning('Deleted stuck AMI Redfish task monitor %(task_monitor)s '
+                    'for node %(node)s after power off timed out.',
+                    {'task_monitor': task_monitor, 'node': task.node.uuid})
+        cleared = True
+
+    return cleared
+
 
 def _set_power_state(task, system, power_state, timeout=None):
     """An internal helper to set a power state on the system.
@@ -122,7 +173,17 @@ class RedfishPower(base.PowerInterface):
             task.driver.management.restore_boot_device(task, system)
 
         try:
-            _set_power_state(task, system, power_state, timeout=timeout)
+            try:
+                _set_power_state(task, system, power_state, timeout=timeout)
+            except exception.PowerStateFailure:
+                if (power_state != states.POWER_OFF
+                        or not _clear_ami_stuck_force_off_tasks(task,
+                                                                system)):
+                    raise
+
+                LOG.info('Retrying power off for node %s after clearing '
+                         'stuck AMI Redfish reset task.', task.node.uuid)
+                _set_power_state(task, system, power_state, timeout=timeout)
         except sushy.exceptions.HTTPError as e:
             # Handle HTTP 400 (BadRequest) and 409 (Conflict) errors where
             # the BMC indicates the node is already in the desired state
