@@ -23,8 +23,8 @@ import tempfile
 from urllib import parse as urlparse
 
 from oslo_log import log
-from oslo_utils import uuidutils
 from oslo_utils import strutils
+from oslo_utils import uuidutils
 
 from ironic.common import exception
 from ironic.common.glance_service import service_utils
