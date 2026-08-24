@@ -238,6 +238,15 @@ opts = [
                       'for POST-related boot device errors. Exponential '
                       'backoff is applied, starting from this value up to '
                       '6x this value.')),
+    cfg.IntOpt('vmedia_insert_timeout',
+               default=60,
+               help=_('Maximum time (in seconds) to wait for a Redfish '
+                      'InsertMedia operation to report the virtual media '
+                      'as inserted before failing the operation.')),
+    cfg.IntOpt('vmedia_insert_poll_interval',
+               default=2,
+               help=_('Interval (in seconds) between readback checks while '
+                      'waiting for virtual media to report as inserted.')),
 ]
 
 
