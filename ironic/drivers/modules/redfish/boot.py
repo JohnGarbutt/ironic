@@ -398,7 +398,8 @@ def _insert_vmedia_in_resource(task, resource, boot_url, boot_device,
             v_media.insert_media(boot_url, **kwargs)
             # Poll until the BMC confirms the media is actually attached,
             # or fail fast on an Exception/Killed task state.
-            _wait_for_vmedia_inserted(task, v_media)
+            if CONF.redfish.enable_vmedia_insert_polling:
+                _wait_for_vmedia_inserted(task, v_media)
         # NOTE(janders): On Cisco C845A M8 (and potentially other OpenBMC
         # systems), some virtual media slots only support local/KVM access
         # via WebSocket/NBD and do not have the InsertMedia action.
