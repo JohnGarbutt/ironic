@@ -61,6 +61,17 @@ class Comparator(enum.Enum):
     def eval(self, variable, value):
         # TODO(clif): Should we some sort of checking of variable type vs
         # requested operator?
+        # Collection-valued variables (e.g. network.tags) are
+        # matched by membership rather than by comparing the collection
+        # itself to the string literal.
+        if isinstance(variable, (frozenset, set, list, tuple)):
+            return self._eval_collection(variable, value)
+
+        # Unset variables (e.g. a portgroup's vendor, or a port without a
+        # category) never match, regardless of comparator.
+        if variable is None:
+            return False
+
         match self.name:
             case self.EQUALITY.name:
                 return variable == value
@@ -80,6 +91,27 @@ class Comparator(enum.Enum):
                 raise exc.TBNComparatorPrefixMatchTypeMismatch(
                     _("Prefix match can only be used with variables "
                       "of type string")
+                )
+
+    def _eval_collection(self, variable, value):
+        """Evaluate this comparator against a collection variable.
+
+        Used for variables like network.tags: checks whether value is (or
+        is not) a member of the collection, or whether any member of the
+        collection starts with value.
+        """
+        match self.name:
+            case self.EQUALITY.name:
+                return value in variable
+            case self.INEQUALITY.name:
+                return value not in variable
+            case self.PREFIX_MATCH.name:
+                return any(isinstance(item, str) and item.startswith(value)
+                           for item in variable)
+            case _:
+                raise exc.TBNComparatorCollectionTypeMismatch(
+                    _(f"Comparator '{self}' can only be used with "
+                      "variables of type string, not a collection")
                 )
 
     def __str__(self):
@@ -122,12 +154,7 @@ class Variables(enum.Enum):
 
 def _retrieve_attribute(attribute_name, tbn_obj):
     """Helper method to get an attribute from a TBN related object"""
-    attribute = getattr(tbn_obj, attribute_name, None)
-
-    if attribute is None:
-        raise exc.TBNAttributeRetrievalException(attr_name=attribute_name)
-
-    return attribute
+    return getattr(tbn_obj, attribute_name, '')
 
 
 # Allows special case FilterExpression evaluations where Port does not
@@ -224,13 +251,20 @@ class CompoundExpression(object):
         self._right_expression = right_expression
 
     def eval(self, port, network):
+        # Short-circuits like normal boolean and/or, so the right
+        # expression is only evaluated when necessary. This matters for
+        # filters like `network.name =~ 'x' || network.tags =~ 'x'`: if the
+        # left side already satisfies the expression, the right side isn't
+        # evaluated even if it wouldn't otherwise be applicable to network.
         left_result = self._left_expression.eval(port, network)
-        right_result = self._right_expression.eval(port, network)
+
         match self._operator:
             case Operator.OR:
-                return left_result or right_result
+                return (left_result
+                        or self._right_expression.eval(port, network))
             case Operator.AND:
-                return left_result and right_result
+                return (left_result
+                        and self._right_expression.eval(port, network))
 
     def __str__(self):
         return (f"{self._left_expression} {self._operator} "
@@ -415,7 +449,10 @@ class Port(PrimordialPort):
             id=0,
             uuid="UNIVERSAL",
             address="UNIVERSAL",
-            category=UNIVERSAL_PORT_CATEGORY
+            category=UNIVERSAL_PORT_CATEGORY,
+            physical_network=None,
+            vendor=None,
+            available_for_dynamic_portgroup=True
         )
 
     def is_port(self):
@@ -438,7 +475,8 @@ class Portgroup(PrimordialPort):
             address=ironic_portgroup.address,
             category=ironic_portgroup.category,
             physical_network=ironic_portgroup.physical_network,
-            vendor=ironic_portgroup.vendor,
+            # Portgroups have no vendor field, unlike Ports.
+            vendor=None,
             dynamic_portgroup=ironic_portgroup.dynamic_portgroup
         )
 
@@ -461,16 +499,17 @@ class Network:
     @classmethod
     def from_vif_info(cls, vif_info):
         """Helper method to create Networks from vif_info dictionaries"""
+        # tags defaults to an empty frozenset (rather than None)
         return cls(vif_info['id'], # vif_info is guaranteed to have 'id'.
                    vif_info.get('name'),
-                   vif_info.get('tags'))
+                   frozenset(vif_info.get('tags') or []))
 
     @classmethod
     def universal_network(cls):
         return cls(
-            id=0,
+            id="0",
             name=UNIVERSAL_NETWORK_NAME,
-            tags=[]
+            tags=frozenset()
         )
 
 

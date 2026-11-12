@@ -1072,6 +1072,12 @@ def validate_port_physnet(task, port_obj):
     ironic nodes to continue to function after an upgrade to a release
     including physical network support.
 
+    When a port that has a physical network is added to a portgroup which has
+    no other member ports and no physical network of its own, the port's
+    physical network is adopted by the portgroup. This keeps the portgroup and
+    its member ports consistent rather than leaving the portgroup on physical
+    network None while it holds a member port on a real physical network.
+
     :param task: a TaskManager instance
     :param port_obj: a port object to be validated.
     :raises: Conflict if the port is a member of a portgroup which is on a
@@ -1089,6 +1095,9 @@ def validate_port_physnet(task, port_obj):
     if not (delta & {'portgroup_id', 'physical_network'}):
         return
 
+    port_physnet = (port_obj.physical_network
+                    if 'physical_network' in port_obj else None)
+
     # Determine the current physical network of the portgroup.
     pg_physnets = network.get_physnets_by_portgroup_id(task,
                                                        port_obj.portgroup_id,
@@ -1098,14 +1107,21 @@ def validate_port_physnet(task, port_obj):
         portgroup = network.get_portgroup_by_id(task, port_obj.portgroup_id)
         if portgroup and portgroup.physical_network is not None:
             pg_physnets = {portgroup.physical_network}
+        elif portgroup and port_physnet is not None:
+            # The portgroup has no other member ports and no physical network
+            # of its own. The port joining it defines the portgroup's physical
+            # network, so that the portgroup does not end up on physical
+            # network None while holding a member port on a real physical
+            # network.
+            portgroup.physical_network = port_physnet
+            portgroup.save()
+            return
         else:
             return
 
     # Check that the port has the same physical network as any existing
     # member ports.
     pg_physnet = pg_physnets.pop()
-    port_physnet = (port_obj.physical_network
-                    if 'physical_network' in port_obj else None)
     if port_physnet != pg_physnet:
         portgroup = network.get_portgroup_by_id(task, port_obj.portgroup_id)
         msg = _("Port with physical network %(physnet)s cannot become a "
@@ -1355,8 +1371,11 @@ def agent_is_alive(node, timeout=None):
         return True
 
     # If no agent_url is present then we have powered down since the
-    # last agent heartbeat
-    if not node.driver_internal_info.get('agent_url'):
+    # last agent heartbeat. Ignore this check while inspection since agent URL
+    # is not available at that point.
+    if (not node.driver_internal_info.get('agent_url')
+            and node.provision_state not in (states.INSPECTING,
+                                             states.INSPECTWAIT)):
         return False
 
     return value_within_timeout(
@@ -2143,6 +2162,24 @@ def node_update_cache(task):
     node_cache_firmware_components(task)
 
 
+def sanitize_steps(steps):
+    """Return a copy of a step or a list of steps that is safe to log.
+
+    The values of sensitive step arguments, such as tokens, are masked. The
+    steps passed in are left as they are, as they are what will be run.
+
+    :param steps: a step dict, or a list of step dicts.
+    :returns: a masked copy of steps.
+    """
+    if isinstance(steps, dict):
+        if isinstance(steps.get('args'), dict):
+            return dict(steps, args=strutils.mask_dict_password(steps['args']))
+        return dict(steps)
+    if isinstance(steps, (list, tuple)):
+        return [sanitize_steps(step) for step in steps]
+    return steps
+
+
 def log_step_flow_history(node, flow, steps, status, aborted_step=None):
     """Persist start/end milestones for cleaning / servicing / deploy flows.
 
@@ -2156,14 +2193,7 @@ def log_step_flow_history(node, flow, steps, status, aborted_step=None):
             or CONF.conductor.log_step_flows_to_syslog):
         return
 
-    sanitized = [
-        (
-            dict(st, args=strutils.mask_dict_password(st["args"]))
-            if isinstance(st, dict) and isinstance(st.get("args"), dict)
-            else st
-        )
-        for st in (steps or [])
-    ]
+    sanitized = sanitize_steps(steps or [])
 
     error = False
     if status == "start":

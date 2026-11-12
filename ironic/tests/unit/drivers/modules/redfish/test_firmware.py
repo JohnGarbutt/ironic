@@ -1069,28 +1069,209 @@ class RedfishFirmwareTestCase(db_base.DbTestCase):
         log_mock.debug.assert_has_calls(debug_calls)
         interface._continue_updates.assert_not_called()
 
+    @mock.patch('ironic.drivers.modules.drac.firmware'
+                '.check_scheduled_idrac_job', autospec=True)
     @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(manager_utils, 'node_power_action', autospec=True)
     @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
     @mock.patch.object(redfish_utils, 'get_task_monitor', autospec=True)
-    def test_check_update_task_monitor_not_found(self, tm_mock, get_us_mock,
-                                                 log_mock):
+    def test_check_update_task_monitor_not_found_bios_job_found(
+            self, tm_mock, get_us_mock, power_mock, log_mock,
+            has_job_mock):
+        """TaskMonitor gone + BIOS + scheduled job exists = reboot."""
+        tm_mock.side_effect = exception.RedfishError()
+        has_job_mock.return_value = True
+        props = self.node.properties.copy()
+        props['vendor'] = 'Dell Inc.'
+        self.node.properties = props
+        self.node.save()
+        self._generate_new_driver_internal_info(['bios'])
+
+        task, interface = self._test__check_node_redfish_firmware_update()
+
+        log_mock.warning.assert_any_call(
+            'Firmware update completed for node %(node)s, '
+            'firmware %(firmware_image)s, but success of the '
+            'update is unknown.  Assuming update was successful.',
+            {'node': self.node.uuid,
+             'firmware_image': 'https://bios/v1.0.1'})
+        power_mock.assert_called_once_with(task, states.REBOOT, mock.ANY)
+        interface._continue_updates.assert_not_called()
+
+    @mock.patch('ironic.drivers.modules.drac.firmware'
+                '.check_scheduled_idrac_job', autospec=True)
+    @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(manager_utils, 'node_power_action', autospec=True)
+    @mock.patch.object(manager_utils, 'cleaning_error_handler', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_task_monitor', autospec=True)
+    def test_check_update_task_monitor_not_found_bios_no_job(
+            self, tm_mock, get_us_mock, clean_err_mock, power_mock,
+            log_mock, has_job_mock):
+        """TaskMonitor gone + BIOS + no scheduled job = failure."""
+        tm_mock.side_effect = exception.RedfishError()
+        has_job_mock.return_value = False
+        props = self.node.properties.copy()
+        props['vendor'] = 'Dell Inc.'
+        self.node.properties = props
+        self.node.save()
+        self._generate_new_driver_internal_info(['bios'])
+
+        task, interface = self._test__check_node_redfish_firmware_update()
+
+        power_mock.assert_not_called()
+        interface._continue_updates.assert_not_called()
+        clean_err_mock.assert_called_once()
+
+    @mock.patch('ironic.drivers.modules.drac.firmware'
+                '.check_scheduled_idrac_job', autospec=True)
+    @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(manager_utils, 'node_power_action', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_task_monitor', autospec=True)
+    def test_check_update_task_monitor_not_found_bios_oem_unavailable(
+            self, tm_mock, get_us_mock, power_mock, log_mock,
+            has_job_mock):
+        """TaskMonitor gone + BIOS + OEM unavailable = fallback reboot."""
+        tm_mock.side_effect = exception.RedfishError()
+        has_job_mock.return_value = None
+        props = self.node.properties.copy()
+        props['vendor'] = 'Dell EMC'
+        self.node.properties = props
+        self.node.save()
+        self._generate_new_driver_internal_info(['bios'])
+
+        task, interface = self._test__check_node_redfish_firmware_update()
+
+        power_mock.assert_called_once_with(task, states.REBOOT, mock.ANY)
+        interface._continue_updates.assert_not_called()
+
+    @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(manager_utils, 'node_power_action', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_task_monitor', autospec=True)
+    def test_check_update_task_monitor_not_found_bios_non_dell(
+            self, tm_mock, get_us_mock, power_mock, log_mock):
+        """TaskMonitor gone + BIOS + non-Dell node = fallback reboot."""
         tm_mock.side_effect = exception.RedfishError()
         self._generate_new_driver_internal_info(['bios'])
 
         task, interface = self._test__check_node_redfish_firmware_update()
-        warning_calls = [
-            mock.call('Firmware update completed for node %(node)s, '
-                      'firmware %(firmware_image)s, but success of the '
-                      'update is unknown.  Assuming update was successful.',
-                      {'node': self.node.uuid,
-                       'firmware_image': 'https://bios/v1.0.1'})]
 
-        log_mock.warning.assert_has_calls(warning_calls)
+        power_mock.assert_called_once_with(task, states.REBOOT, mock.ANY)
+        interface._continue_updates.assert_not_called()
+
+    @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_task_monitor', autospec=True)
+    def test_check_update_task_monitor_not_found_bmc(self, tm_mock,
+                                                     get_us_mock, log_mock):
+        tm_mock.side_effect = exception.RedfishError()
+        self._generate_new_driver_internal_info(['bmc'])
+
+        task, interface = self._test__check_node_redfish_firmware_update()
+
+        # Non-BIOS: should call _continue_updates directly
         interface._continue_updates.assert_called_once_with(
             task, get_us_mock.return_value,
-            [{'component': 'bios', 'url': 'https://bios/v1.0.1',
-              'task_monitor': '/task/2'}]
+            [{'component': 'bmc', 'url': 'https://bmc/v1.0.1',
+              'task_monitor': '/task/1'}]
         )
+
+    @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(manager_utils, 'node_power_action', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_task_monitor', autospec=True)
+    def test_check_update_task_monitor_not_found_bios_already_rebooted(
+            self, tm_mock, get_us_mock, power_mock, log_mock):
+        tm_mock.side_effect = exception.RedfishError()
+        self._generate_new_driver_internal_info(['bios'])
+        # Simulate reboot already triggered on previous poll
+        settings = self.node.driver_internal_info['redfish_fw_updates']
+        settings[0]['bios_reboot_triggered'] = True
+        self.node.set_driver_internal_info('redfish_fw_updates', settings)
+        self.node.save()
+
+        task, interface = self._test__check_node_redfish_firmware_update()
+
+        # Reboot already done: should fall through to _continue_updates
+        power_mock.assert_not_called()
+        interface._continue_updates.assert_called_once()
+
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_check_scheduled_idrac_job_found(self, get_system_mock):
+        """Dell iDRAC OEM returns scheduled LC job matching JID."""
+        from ironic.drivers.modules.drac import firmware as drac_fw
+        manager_mock = mock.Mock()
+        oem_mock = manager_mock.get_oem_extension.return_value
+        oem_mock.job_collection.get_unfinished_jobs.return_value = [
+            'JID_839968767020']
+        get_system_mock.return_value.managers = [manager_mock]
+
+        current_update = {
+            'task_monitor': '/redfish/v1/TaskService/TaskMonitors/'
+                            'JID_839968767020'}
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            result = drac_fw.check_scheduled_idrac_job(
+                task, current_update)
+
+        self.assertIs(result, True)
+        manager_mock.get_oem_extension.assert_called_once_with('Dell')
+
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_check_scheduled_idrac_job_not_found(self, get_system_mock):
+        """Dell iDRAC OEM returns no matching scheduled LC job."""
+        from ironic.drivers.modules.drac import firmware as drac_fw
+        manager_mock = mock.Mock()
+        oem_mock = manager_mock.get_oem_extension.return_value
+        oem_mock.job_collection.get_unfinished_jobs.return_value = []
+        get_system_mock.return_value.managers = [manager_mock]
+
+        current_update = {
+            'task_monitor': '/redfish/v1/TaskService/TaskMonitors/'
+                            'JID_839968767020'}
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            result = drac_fw.check_scheduled_idrac_job(
+                task, current_update)
+
+        self.assertIs(result, False)
+
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_check_scheduled_idrac_job_oem_not_available(
+            self, get_system_mock):
+        """Non-Dell hardware: OEM extension not found returns None."""
+        from ironic.drivers.modules.drac import firmware as drac_fw
+        manager_mock = mock.Mock()
+        manager_mock.get_oem_extension.side_effect = Exception(
+            'OEM extension not found')
+        get_system_mock.return_value.managers = [manager_mock]
+
+        current_update = {
+            'task_monitor': '/redfish/v1/TaskService/TaskMonitors/'
+                            'JID_839968767020'}
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            result = drac_fw.check_scheduled_idrac_job(
+                task, current_update)
+
+        self.assertIsNone(result)
+
+    def test_check_scheduled_idrac_job_no_task_monitor(self):
+        """No task_monitor URI returns None."""
+        from ironic.drivers.modules.drac import firmware as drac_fw
+        current_update = {'task_monitor': ''}
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            result = drac_fw.check_scheduled_idrac_job(
+                task, current_update)
+
+        self.assertIsNone(result)
 
     @mock.patch.object(redfish_fw, 'LOG', autospec=True)
     @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
@@ -1148,6 +1329,36 @@ class RedfishFirmwareTestCase(db_base.DbTestCase):
 
             log_mock.debug.assert_has_calls(debug_calls)
             interface._continue_updates.assert_not_called()
+
+    @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_task_monitor', autospec=True)
+    def test__check_update_task_state_new(self, tm_mock, get_us_mock,
+                                          log_mock):
+        """Test task in NEW state is treated as in-progress, not terminal.
+
+        Dell iDRAC returns TaskState.NEW immediately after a SimpleUpdate
+        request before the task transitions to STARTING. This must not be
+        treated as a terminal state, otherwise the firmware update is
+        incorrectly declared as failed.
+        """
+        self._generate_new_driver_internal_info(['bmc'])
+
+        tm_mock.return_value.is_processing = False
+        mock_task = tm_mock.return_value.get_task.return_value
+        mock_task.task_state = sushy.TASK_STATE_NEW
+        mock_task.task_status = sushy.HEALTH_OK
+
+        _, interface = self._test__check_node_redfish_firmware_update()
+
+        debug_calls = [
+            mock.call('Firmware update in progress for node %(node)s, '
+                      'firmware %(firmware_image)s.',
+                      {'node': self.node.uuid,
+                       'firmware_image': 'https://bmc/v1.0.1'})]
+
+        log_mock.debug.assert_has_calls(debug_calls)
+        interface._continue_updates.assert_not_called()
 
     @mock.patch.object(manager_utils, 'cleaning_error_handler', autospec=True)
     @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)

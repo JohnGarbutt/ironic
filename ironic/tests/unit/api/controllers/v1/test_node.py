@@ -2976,6 +2976,15 @@ class TestPatch(test_api_base.BaseApiTest):
                          timeutils.parse_isotime(response.json['updated_at']))
         self.mock_update_node.assert_called_once_with(
             mock.ANY, mock.ANY, mock.ANY, 'test-topic', None)
+        # NOTE(TheJulia) As we save a hydrated database object back, we need
+        # to double check what gets saved back out to the database to validate
+        # handling is proper.
+        updated_node = self.mock_update_node.call_args.args[2]
+        self.assertEqual(updated_node.instance_uuid,
+                         'aaaaaaaa-1111-bbbb-2222-cccccccccccc')
+        # NOTE(TheJulia): Checking parent node here is to ensure we don't
+        # accidentally regress with auto-setting logic.
+        self.assertIsNone(updated_node.parent_node)
         mock_notify.assert_has_calls([mock.call(mock.ANY, mock.ANY, 'update',
                                       obj_fields.NotificationLevel.INFO,
                                       obj_fields.NotificationStatus.START,
@@ -7386,10 +7395,19 @@ ORHMKeXMO8fcK0By7CiMKwHSXCoEQgfQhWwpMdSsO8LgHCjh87DQc= """
                        autospec=True)
     @mock.patch.object(objects.Node, 'get_by_uuid', autospec=True)
     @mock.patch.object(rpcapi.ConductorAPI, 'update_node', autospec=True)
-    def test_set_node_maintenance_mode(self, mock_update, mock_get,
-                                       mock_notify):
+    @mock.patch.object(policy, 'authorize', autospec=True)
+    def test_set_node_maintenance_mode(self, mock_authorize, mock_update,
+                                       mock_get, mock_notify):
+
+        authorized_rules = []
+        def mock_authorize_function(rule, target, creds):
+            authorized_rules.append(rule)
+            return True
+        mock_authorize.side_effect = mock_authorize_function
+
         self._test_set_node_maintenance_mode(mock_update, mock_get,
                                              'fake_reason', self.node.uuid)
+        self.assertIn('baremetal:node:set_maintenance', authorized_rules)
         mock_notify.assert_has_calls([mock.call(mock.ANY, mock.ANY,
                                                 'maintenance_set',
                                      obj_fields.NotificationLevel.INFO,

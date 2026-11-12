@@ -129,17 +129,7 @@ class RedfishInspect(base.InspectInterface):
                         {'node': task.node.uuid})
             inspected_properties['local_gb'] = 0
 
-        if storages := system.storage or system.simple_storage:
-            disks = list()
-            for storage in storages.get_members():
-                drives = storage.drives if hasattr(
-                    storage, 'drives') else storage.devices
-                for drive in drives:
-                    disk = {}
-                    disk['name'] = drive.name
-                    disk['size'] = drive.capacity_bytes
-                    disks.append(disk)
-
+        if disks := self._get_simple_disks(system):
             inventory['disks'] = disks
 
         storage_controllers = self._get_storage_controllers(task, system)
@@ -148,7 +138,7 @@ class RedfishInspect(base.InspectInterface):
 
         inventory['interfaces'] = self._get_interface_info(task, system)
 
-        pcie_devices = self._get_pcie_devices(system.pcie_devices)
+        pcie_devices = self._get_pcie_devices(system)
         if pcie_devices:
             inventory['pci_devices'] = pcie_devices
 
@@ -346,6 +336,42 @@ class RedfishInspect(base.InspectInterface):
 
         return cpu
 
+    def _get_simple_disks(self, system):
+        is_full_storage = False
+        try:
+            storages = system.storage
+            is_full_storage = True
+        except sushy.exceptions.MissingAttributeError:
+            storages = None
+
+        if not storages:
+            try:
+                storages = system.simple_storage
+            except sushy.exceptions.MissingAttributeError:
+                pass
+
+        if not storages:
+            return []
+
+        disks = list()
+        for storage in storages.get_members():
+            if is_full_storage:
+                drives = storage.drives
+            else:
+                drives = storage.devices
+            for drive in drives:
+                disk = {}
+                disk['name'] = drive.name
+                disk['size'] = drive.capacity_bytes
+                if is_full_storage:
+                    disk['vendor'] = drive.manufacturer
+                    disk['model'] = drive.model
+                    disk['serial'] = drive.serial_number
+                    if drive.media_type:
+                        disk['rotational'] = drive.media_type == 'HDD'
+                disks.append(disk)
+        return disks
+
     def _get_storage_controllers(self, task, system):
         """Extract storage controller and drive information.
 
@@ -358,10 +384,9 @@ class RedfishInspect(base.InspectInterface):
         """
         controllers = []
 
-        if not system.storage:
-            return controllers
-
         try:
+            if not system.storage:
+                return controllers
             members = system.storage.get_members()
         except sushy.exceptions.SushyError as ex:
             LOG.debug('Failed to get storage members for node %(node)s: '
@@ -498,13 +523,17 @@ class RedfishInspect(base.InspectInterface):
 
         return controller
 
-    def _get_pcie_devices(self, pcie_devices_collection):
+    def _get_pcie_devices(self, system):
         """Extract PCIe device information from Redfish collection.
 
-        :param pcie_devices_collection: Redfish PCIe devices collection
+        :param system: a Redfish system object.
         :returns: List of PCIe device dictionaries
         """
-        # Return empty list if collection is None
+        try:
+            pcie_devices_collection = system.pcie_devices
+        except sushy.exceptions.SushyError:
+            pcie_devices_collection = None
+
         if pcie_devices_collection is None:
             return []
 
@@ -513,12 +542,13 @@ class RedfishInspect(base.InspectInterface):
         # Process each PCIe device
         for pcie_device in pcie_devices_collection.get_members():
             # Skip devices that don't have functions
-            if (not hasattr(pcie_device, 'pcie_functions')
-                    or not pcie_device.pcie_functions):
+            try:
+                pcie_functions = pcie_device.pcie_functions
+            except sushy.exceptions.SushyError:
                 continue
 
             # Process each function on this device
-            for pcie_function in pcie_device.pcie_functions.get_members():
+            for pcie_function in pcie_functions.get_members():
                 function_info = self._extract_function_info(pcie_function)
                 if function_info:
                     device_list.append(function_info)

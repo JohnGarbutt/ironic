@@ -2196,6 +2196,8 @@ class NodeHistoryController(rest.RestController):
         if marker:
             marker_obj = objects.NodeHistory.get_by_uuid(api.request.context,
                                                          marker)
+            if marker_obj.node_id != node.id:
+                raise exception.NodeHistoryNotFound(history=marker)
         limit = api_utils.validate_limit(limit)
         sort_dir = api_utils.validate_sort_dir(sort_dir)
 
@@ -2225,12 +2227,19 @@ class NodeHistoryController(rest.RestController):
     @args.validate(event=args.uuid_or_name)
     def get_one(self, event):
         """Get a node history entry"""
+        # NOTE(TheJulia): The first step in the RBAC check, ensure
+        # the user has rights on the parent.
         node = api_utils.check_node_policy_and_retrieve(
             'baremetal:node:history:get', self.node_ident)
         # TODO(TheJulia): Need to check policy to make sure if policy
         # check fails, that the entry cannot be found.
         event = objects.NodeHistory.get_by_uuid(api.request.context,
                                                 event)
+        if event.node_id != node.id:
+            # Access is always built upon the node itself, but we
+            # must ensure the caller's node matches the requested
+            # event.
+            raise exception.NodeHistoryNotFound(history=event)
         return self._history_event_convert_with_links(
             node.uuid, event, detail=True)
 
@@ -3024,11 +3033,9 @@ class NodesController(rest.RestController):
         chassis = _replace_chassis_uuid_with_id(node)
         chassis_uuid = chassis and chassis.uuid or None
 
-        if ('parent_node' in node
-            and not uuidutils.is_uuid_like(node['parent_node'])):
-
-            parent_node = api_utils.check_node_policy_and_retrieve(
-                'baremetal:node:get', node['parent_node'])
+        if node.get('parent_node'):
+            parent_node = api_utils.authorize_node_link(
+                node, node['parent_node'], 'parent_node')
             node['parent_node'] = parent_node.uuid
 
         new_node = objects.Node(context, **node)
@@ -3094,20 +3101,6 @@ class NodesController(rest.RestController):
 
         for network_data in network_data_fields:
             validate_network_data(network_data)
-        parent_node = api_utils.get_patch_values(patch, '/parent_node')
-        if parent_node:
-            # At this point, if there *is* a parent_node, there is a value
-            # in the patch value list.
-            try:
-                # Verify we can see the parent node
-                req_parent_node = api_utils.check_node_policy_and_retrieve(
-                    'baremetal:node:get', parent_node[0])
-                # If we can't see the node, an exception gets raised.
-            except Exception:
-                msg = _("Unable to apply the requested parent_node. "
-                        "Requested value was invalid.")
-                raise exception.Invalid(msg)
-            corrected_values['parent_node'] = req_parent_node.uuid
         return corrected_values
 
     def _authorize_patch_and_get_node(self, node_ident, patch):
@@ -3132,7 +3125,9 @@ class NodesController(rest.RestController):
             ('/retired', 'baremetal:node:update:retired'),
             ('/shard', 'baremetal:node:update:shard'),
             ('/parent_node', 'baremetal:node:update:parent_node'),
-            ('/disable_power_off', 'baremetal:node:update:disable_power_off')
+            ('/disable_power_off', 'baremetal:node:update:disable_power_off'),
+            ('/maintenance', 'baremetal:node:set_maintenance'),
+            ('/maintenance_reason', 'baremetal:node:set_maintenance')
         )
         for p in patch:
             # Process general direct path to policy map
@@ -3196,6 +3191,14 @@ class NodesController(rest.RestController):
 
         context = api.request.context
         rpc_node = self._authorize_patch_and_get_node(node_ident, patch)
+        if parent_node := api_utils.authorize_node_link_patch(
+                rpc_node, patch, 'parent_node'):
+            # parent_node would be set to the UUID to verify that the request
+            # is authorized against the returned parent_node.uuid, and is then
+            # set as the authorized to node. IFF there is a mismatch, then
+            # we need to force override the parent node to the result.
+            if parent_node.uuid != rpc_node.uuid:
+                corrected_values['parent_node'] = parent_node.uuid
 
         remove_inst_uuid_patch = [{'op': 'remove', 'path': '/instance_uuid'}]
         if rpc_node.maintenance and patch == remove_inst_uuid_patch:
